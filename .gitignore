@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Cloudflare
+.wrangler/
+
+# Build outputs
+dist/
+coverage/
+
+# Logs
+*.log

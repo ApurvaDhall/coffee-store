@@ -141,14 +141,21 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
 
 function toUrl(path: string): string {
+  if (!API_BASE_URL) {
+    throw new Error("VITE_API_URL is not configured.");
+  }
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 export function getGoogleAuthStartUrl(): string {
   return toUrl("/api/auth/google");
+}
+
+export function getLogoutUrl(): string {
+  return toUrl("/api/auth/logout");
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

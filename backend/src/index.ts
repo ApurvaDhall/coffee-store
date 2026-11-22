@@ -7,6 +7,7 @@ import { calculateCartTotals } from "./cart";
 import { errorBody } from "./http";
 import { calculateOrderTotalCents } from "./orders";
 import {
+  cookieAttributes,
   parseAdminEmails,
   requireAuth,
   SESSION_COOKIE_NAME,
@@ -107,12 +108,15 @@ app.use("/api/*", async (c, next) => {
     return c.json(errorBody("SERVER_CONFIG_ERROR", "FRONTEND_ORIGIN is not configured."), 500);
   }
 
-  if (c.req.method === "OPTIONS") {
-    const requestOrigin = c.req.header("Origin");
-    if (requestOrigin !== frontendOrigin) {
+  const requestOrigin = c.req.header("Origin");
+  if (requestOrigin && requestOrigin !== frontendOrigin) {
+    if (c.req.method === "OPTIONS") {
       return c.body(null, 403);
     }
+    return c.json(errorBody("CORS_ERROR", "Origin is not allowed."), 403);
+  }
 
+  if (c.req.method === "OPTIONS") {
     c.header("Access-Control-Allow-Origin", frontendOrigin);
     c.header("Access-Control-Allow-Credentials", "true");
     c.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
@@ -243,19 +247,16 @@ app.get("/api/auth/google", async (c) => {
   const codeVerifier = randomBase64Url(64);
   const codeChallenge = await sha256Base64Url(codeVerifier);
   const redirectUri = callbackUrlFromRequestUrl(c.req.url);
+  const cookieOptions = cookieAttributes(c.req.url);
 
   setCookie(c, OAUTH_STATE_COOKIE_NAME, state, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "Lax",
+    ...cookieOptions,
     maxAge: STATE_TTL_SECONDS,
     path: "/"
   });
 
   setCookie(c, OAUTH_PKCE_COOKIE_NAME, codeVerifier, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "Lax",
+    ...cookieOptions,
     maxAge: STATE_TTL_SECONDS,
     path: "/"
   });
@@ -278,8 +279,9 @@ app.get("/api/auth/google/callback", async (c) => {
   const expectedState = getCookie(c, OAUTH_STATE_COOKIE_NAME);
   const codeVerifier = getCookie(c, OAUTH_PKCE_COOKIE_NAME);
 
-  deleteCookie(c, OAUTH_STATE_COOKIE_NAME, { path: "/" });
-  deleteCookie(c, OAUTH_PKCE_COOKIE_NAME, { path: "/" });
+  const oauthCookieOptions = cookieAttributes(c.req.url);
+  deleteCookie(c, OAUTH_STATE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
+  deleteCookie(c, OAUTH_PKCE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
 
   if (!code || !state || !expectedState || state !== expectedState || !codeVerifier) {
     return c.json(errorBody("INVALID_OAUTH_STATE", "Invalid OAuth state."), 400);
@@ -364,9 +366,7 @@ app.get("/api/auth/google/callback", async (c) => {
     .run();
 
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "Lax",
+    ...cookieAttributes(c.req.url),
     maxAge: SESSION_TTL_SECONDS,
     path: "/"
   });
@@ -393,11 +393,25 @@ app.post("/api/auth/logout", async (c) => {
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: "/",
-    secure: true,
-    sameSite: "Lax"
+    ...cookieAttributes(c.req.url)
   });
 
-  return c.json({ ok: true });
+  return c.redirect(c.env.FRONTEND_ORIGIN, 302);
+});
+
+app.get("/api/auth/logout", async (c) => {
+  const sessionId = getCookie(c, SESSION_COOKIE_NAME);
+
+  if (sessionId) {
+    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(sessionId).run();
+  }
+
+  deleteCookie(c, SESSION_COOKIE_NAME, {
+    path: "/",
+    ...cookieAttributes(c.req.url)
+  });
+
+  return c.redirect(c.env.FRONTEND_ORIGIN, 302);
 });
 
 app.get("/api/cart", requireAuth, async (c) => {

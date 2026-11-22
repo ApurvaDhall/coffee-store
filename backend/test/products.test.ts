@@ -175,7 +175,7 @@ describe("GET /api/products", () => {
       {
         DB: createMockDB(),
         AI: {} as Ai,
-        FRONTEND_ORIGIN: "http://localhost:5173",
+        FRONTEND_ORIGIN: "https://frontend.example.com",
         GOOGLE_CLIENT_ID: "test",
         GOOGLE_CLIENT_SECRET: "test",
         SESSION_SECRET: "test",
@@ -203,7 +203,7 @@ describe("GET /api/products", () => {
     const response = await app.request("/api/products?page=2&pageSize=2", undefined, {
       DB: createMockDB(),
       AI: {} as Ai,
-      FRONTEND_ORIGIN: "http://localhost:5173",
+      FRONTEND_ORIGIN: "https://frontend.example.com",
       GOOGLE_CLIENT_ID: "test",
       GOOGLE_CLIENT_SECRET: "test",
       SESSION_SECRET: "test",
@@ -231,7 +231,7 @@ describe("GET /api/products/:id", () => {
     const response = await app.request("/api/products/p2", undefined, {
       DB: createMockDB(),
       AI: {} as Ai,
-      FRONTEND_ORIGIN: "http://localhost:5173",
+      FRONTEND_ORIGIN: "https://frontend.example.com",
       GOOGLE_CLIENT_ID: "test",
       GOOGLE_CLIENT_SECRET: "test",
       SESSION_SECRET: "test",
@@ -248,7 +248,7 @@ describe("GET /api/products/:id", () => {
     const response = await app.request("/api/products/missing", undefined, {
       DB: createMockDB(),
       AI: {} as Ai,
-      FRONTEND_ORIGIN: "http://localhost:5173",
+      FRONTEND_ORIGIN: "https://frontend.example.com",
       GOOGLE_CLIENT_ID: "test",
       GOOGLE_CLIENT_SECRET: "test",
       SESSION_SECRET: "test",

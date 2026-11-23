@@ -11,7 +11,7 @@ Roast Republic is a full-stack coffee storefront built with React and Hono. It s
 
 ## Overview
 
-Customers can browse and filter the catalogue, open product details, manage a cart, sign in with Google, checkout, and review their orders. Signed-in users can use the Coffee Finder, which asks Workers AI for catalog-backed matches and falls back to local keyword matches if AI is unavailable.
+Customers can browse and filter the catalogue, open product details, manage a cart, sign in with Google, checkout, and review their orders. Anyone can use the Coffee Finder, which asks Workers AI for catalog-backed matches and falls back to local keyword matches if AI is unavailable.
 
 Administrators can manage products and order statuses after their Google email is included in `ADMIN_EMAILS`.
 
@@ -96,7 +96,7 @@ Admin access is determined by `ADMIN_EMAILS` in `backend/wrangler.toml`. A revie
 1. Have their Google email added to `ADMIN_EMAILS`.
 2. Be added to the Google OAuth app's Test users because the app is in Testing mode.
 
-Reviewer Google email: `[REVIEWER EMAIL]`
+Reviewer Google email: please email it to me and I will add it to ADMIN_EMAILS and the OAuth test users.
 
 Alternatively, ask the repository owner to add the reviewer email.
 
@@ -255,6 +255,7 @@ The endpoint has a fixed 8-second timeout and a D1-backed 10-request-per-minute 
 - The frontend has no automated test suite.
 - Test orders exist in the live database.
 - The Google OAuth app is in Testing mode and only Test users can sign in.
+- Google sign-in fails in Firefox with an INVALID_OAUTH_STATE error in my tests; it works in Chrome. Not fixed due to time. Please use Chrome or Edge.
 
 ## Secret-scanning checklist
 

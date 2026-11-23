@@ -169,9 +169,20 @@ async function sha256Base64Url(input: string): Promise<string> {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function callbackUrlFromRequestUrl(requestUrl: string): string {
-  const url = new URL(requestUrl);
-  return `${url.origin}/api/auth/google/callback`;
+function oauthRedirectUri(
+  c: Context<{ Bindings: AppBindings; Variables: AppVariables }>
+): string {
+  if (c.env.OAUTH_REDIRECT_URI?.trim()) {
+    return c.env.OAUTH_REDIRECT_URI.trim();
+  }
+
+  const frontendOrigin = new URL(c.env.FRONTEND_ORIGIN);
+  const forwardedHost = c.req.header("X-Forwarded-Host")?.trim();
+  if (forwardedHost && forwardedHost === frontendOrigin.host) {
+    return `${frontendOrigin.protocol}//${forwardedHost}/api/auth/google/callback`;
+  }
+
+  return `${frontendOrigin.origin}/api/auth/google/callback`;
 }
 
 async function getOrderWithItems(
@@ -246,8 +257,8 @@ app.get("/api/auth/google", async (c) => {
   const state = randomBase64Url(32);
   const codeVerifier = randomBase64Url(64);
   const codeChallenge = await sha256Base64Url(codeVerifier);
-  const redirectUri = callbackUrlFromRequestUrl(c.req.url);
-  const cookieOptions = cookieAttributes(c.req.url);
+  const redirectUri = oauthRedirectUri(c);
+  const cookieOptions = cookieAttributes();
 
   setCookie(c, OAUTH_STATE_COOKIE_NAME, state, {
     ...cookieOptions,
@@ -279,7 +290,7 @@ app.get("/api/auth/google/callback", async (c) => {
   const expectedState = getCookie(c, OAUTH_STATE_COOKIE_NAME);
   const codeVerifier = getCookie(c, OAUTH_PKCE_COOKIE_NAME);
 
-  const oauthCookieOptions = cookieAttributes(c.req.url);
+  const oauthCookieOptions = cookieAttributes();
   deleteCookie(c, OAUTH_STATE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
   deleteCookie(c, OAUTH_PKCE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
 
@@ -287,7 +298,7 @@ app.get("/api/auth/google/callback", async (c) => {
     return c.json(errorBody("INVALID_OAUTH_STATE", "Invalid OAuth state."), 400);
   }
 
-  const redirectUri = callbackUrlFromRequestUrl(c.req.url);
+  const redirectUri = oauthRedirectUri(c);
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: {
@@ -366,7 +377,7 @@ app.get("/api/auth/google/callback", async (c) => {
     .run();
 
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
-    ...cookieAttributes(c.req.url),
+    ...cookieAttributes(),
     maxAge: SESSION_TTL_SECONDS,
     path: "/"
   });
@@ -393,7 +404,7 @@ app.post("/api/auth/logout", async (c) => {
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: "/",
-    ...cookieAttributes(c.req.url)
+    ...cookieAttributes()
   });
 
   return c.redirect(c.env.FRONTEND_ORIGIN, 302);
@@ -408,7 +419,7 @@ app.get("/api/auth/logout", async (c) => {
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: "/",
-    ...cookieAttributes(c.req.url)
+    ...cookieAttributes()
   });
 
   return c.redirect(c.env.FRONTEND_ORIGIN, 302);

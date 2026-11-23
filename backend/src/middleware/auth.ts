@@ -7,6 +7,7 @@ export const SESSION_COOKIE_NAME = "session";
 export type AppBindings = {
   DB: D1Database;
   FRONTEND_ORIGIN: string;
+  OAUTH_REDIRECT_URI?: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   SESSION_SECRET: string;
@@ -21,21 +22,11 @@ export type AuthUser = {
   name: string;
 };
 
-export function isLocalRequest(requestUrl: string): boolean {
-  try {
-    const hostname = new URL(requestUrl).hostname;
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  } catch {
-    return true;
-  }
-}
-
-export function cookieAttributes(requestUrl: string) {
-  const local = isLocalRequest(requestUrl);
+export function cookieAttributes() {
   return {
     httpOnly: true,
-    secure: !local,
-    sameSite: local ? ("Lax" as const) : ("None" as const)
+    secure: true,
+    sameSite: "Lax" as const
   };
 }
 
@@ -108,7 +99,7 @@ export async function requireAuth(
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
       path: "/",
-      ...cookieAttributes(c.req.url)
+      ...cookieAttributes()
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }
@@ -130,7 +121,7 @@ export async function requireAdmin(
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
       path: "/",
-      ...cookieAttributes(c.req.url)
+      ...cookieAttributes()
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }

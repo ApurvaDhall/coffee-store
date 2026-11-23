@@ -12,5 +12,6 @@ binding = "AI"
 
 [vars]
 FRONTEND_ORIGIN = "https://coffee-frontend-2if.pages.dev"
+OAUTH_REDIRECT_URI = "https://coffee-frontend-2if.pages.dev/api/auth/google/callback"
 GOOGLE_CLIENT_ID = "246622750114-j73u72iojlkf2belcj64v1l4ftvfgki7.apps.googleusercontent.com"
 ADMIN_EMAILS = "apurva2464@gmail.com"

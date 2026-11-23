@@ -21,6 +21,24 @@ export type AuthUser = {
   name: string;
 };
 
+export function isLocalRequest(requestUrl: string): boolean {
+  try {
+    const hostname = new URL(requestUrl).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return true;
+  }
+}
+
+export function cookieAttributes(requestUrl: string) {
+  const local = isLocalRequest(requestUrl);
+  return {
+    httpOnly: true,
+    secure: !local,
+    sameSite: local ? ("Lax" as const) : ("None" as const)
+  };
+}
+
 export type AppVariables = {
   user: AuthUser;
 };
@@ -89,7 +107,8 @@ export async function requireAuth(
   const user = await findUserBySession(c, sessionId);
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
-      path: "/"
+      path: "/",
+      ...cookieAttributes(c.req.url)
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }
@@ -110,7 +129,8 @@ export async function requireAdmin(
   const user = await findUserBySession(c, sessionId);
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
-      path: "/"
+      path: "/",
+      ...cookieAttributes(c.req.url)
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }

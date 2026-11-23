@@ -7,8 +7,8 @@ import {
   getAuthMe,
   getCart,
   getGoogleAuthStartUrl,
+  getLogoutUrl,
   getGuestCart,
-  postLogout,
   setCartItemQuantity,
   type AuthMeResponse
 } from "./lib/api";
@@ -75,14 +75,9 @@ function Shell() {
     window.location.assign(getGoogleAuthStartUrl());
   };
 
-  const onSignOut = async () => {
+  const onSignOut = () => {
     setSigningOut(true);
-    try {
-      await postLogout();
-      await refresh();
-    } finally {
-      setSigningOut(false);
-    }
+    window.location.assign(getLogoutUrl());
   };
 
   return (

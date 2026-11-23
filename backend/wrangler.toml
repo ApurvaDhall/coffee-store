@@ -1,16 +1,16 @@
 name = "coffee-backend"
 main = "src/index.ts"
-compatibility_date = "2026-11-20"
+compatibility_date = "2025-07-18"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "replace-with-d1-database-name"
-database_id = "replace-with-d1-database-id"
+database_name = "coffee-db"
+database_id = "a06b7efa-c4cb-4719-8d88-04de8288834a"
 
 [ai]
 binding = "AI"
 
 [vars]
-FRONTEND_ORIGIN = "http://localhost:5173"
-GOOGLE_CLIENT_ID = "replace-with-google-client-id"
-ADMIN_EMAILS = "replace-with-admin-emails"
+FRONTEND_ORIGIN = "https://coffee-frontend-2if.pages.dev"
+GOOGLE_CLIENT_ID = "246622750114-j73u72iojlkf2belcj64v1l4ftvfgki7.apps.googleusercontent.com"
+ADMIN_EMAILS = "apurva2464@gmail.com"

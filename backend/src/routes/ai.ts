@@ -6,9 +6,40 @@ import type { AppBindings, AppVariables } from "../middleware/auth";
 const aiModelResponseSchema = z.object({
   items: z.array(z.object({
     id: z.coerce.string().trim().min(1).max(100),
-    reason: z.string().trim().min(1).max(500)
+    reason: z.string().trim().min(1).max(500).optional()
   })).max(3)
 });
+
+function extractJsonText(value: unknown): unknown {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const withoutFence = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const start = withoutFence.indexOf("{");
+    const end = withoutFence.lastIndexOf("}");
+    if (start >= 0 && end >= start) {
+      return JSON.parse(withoutFence.slice(start, end + 1));
+    }
+    return JSON.parse(withoutFence);
+  }
+
+  if (value && typeof value === "object") {
+    const response = value as {
+      response?: unknown;
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+
+    const content = response.choices?.[0]?.message?.content;
+    if (content !== undefined) {
+      return extractJsonText(content);
+    }
+
+    if ("response" in response) {
+      return extractJsonText(response.response);
+    }
+  }
+
+  return value;
+}
 
 export const aiRoutes = new Hono<{ Bindings: AppBindings; Variables: AppVariables }>();
 
@@ -79,26 +110,53 @@ aiRoutes.post("/coffee-finder", async (c) => {
       stock: product.stock
     }));
 
-    const aiResponse = await ai.run("@cf/meta/llama-3.1-8b-instruct", {
-      messages: [
-        {
-          role: "system",
-          content: "Return a JSON object with an items array. Use only IDs and products from the supplied catalog. Never invent product IDs."
-        },
-        {
-          role: "user",
-          content: `Query: ${parsed.data.query}\nCatalog: ${JSON.stringify(productCatalog)}\nReturn up to 3 matches.`
-        }
-      ],
-      response_format: { type: "json_object" }
-    }) as { response?: unknown };
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Workers AI request timed out")), 8000);
+    });
+    const aiResponse = await Promise.race([
+      ai.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+        messages: [
+          {
+            role: "system",
+            content: "Return a JSON object with an items array. Use only IDs and products from the supplied catalog. Never invent product IDs."
+          },
+          {
+            role: "user",
+            content: `Query: ${parsed.data.query}\nCatalog: ${JSON.stringify(productCatalog)}\nReturn up to 3 matches.`
+          }
+        ],
+        response_format: { type: "json_object" }
+      }),
+      timeout
+    ]) as unknown;
 
-    const modelText = typeof aiResponse.response === "string"
-      ? aiResponse.response
-      : JSON.stringify(aiResponse.response ?? aiResponse);
-    const modelParsed = aiModelResponseSchema.safeParse(JSON.parse(modelText));
+    let modelParsed;
+    try {
+      modelParsed = aiModelResponseSchema.safeParse(extractJsonText(aiResponse));
+    } catch {
+      modelParsed = null;
+    }
 
-    if (!modelParsed.success) {
+    if (!modelParsed?.success) {
+      const responseObject = aiResponse && typeof aiResponse === "object"
+        ? aiResponse as {
+            response?: unknown;
+            choices?: Array<{ message?: { content?: unknown } }>;
+          }
+        : null;
+      const choiceContent = responseObject?.choices?.[0]?.message?.content;
+      const responseText = typeof responseObject?.response === "string"
+        ? responseObject.response
+        : typeof choiceContent === "string"
+          ? choiceContent
+          : "";
+      console.error("Coffee Finder AI response could not be parsed", {
+        responseType: typeof aiResponse,
+        responseKeys: aiResponse && typeof aiResponse === "object"
+          ? Object.keys(aiResponse)
+          : [],
+        responsePreview: responseText.slice(0, 300)
+      });
       return c.json({ source: "fallback", items: fallbackItems });
     }
 
@@ -109,7 +167,10 @@ aiRoutes.post("/coffee-finder", async (c) => {
       const product = catalogById.get(item.id);
       if (!product) return [];
       seen.add(item.id);
-      return [{ product, reason: item.reason }];
+      return [{
+        product,
+        reason: item.reason ?? `Recommended for your search: ${product.name}.`
+      }];
     }).slice(0, 3);
 
     if (verifiedItems.length === 0) {
@@ -117,7 +178,12 @@ aiRoutes.post("/coffee-finder", async (c) => {
     }
 
     return c.json({ source: "ai", items: verifiedItems });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Coffee Finder Workers AI error", { name: error.name, message: error.message });
+    } else {
+      console.error("Coffee Finder Workers AI error", { name: "UnknownError", message: String(error) });
+    }
     return c.json({ source: "fallback", items: fallbackItems });
   }
 });

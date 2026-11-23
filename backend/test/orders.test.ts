@@ -209,96 +209,125 @@ function createMockDB(initial: MockState): { db: D1Database; state: MockState } 
     },
     async batch(statements: D1PreparedStatement[]) {
       const results: D1Result[] = [];
+      txState = cloneState(state);
 
-      for (const statement of statements) {
-        const stmt = statement as unknown as { __sql?: string; __params?: unknown[] };
-        const sql = stmt.__sql ?? "";
-        const params = stmt.__params ?? [];
-        const s = activeState();
+      try {
+        for (const statement of statements) {
+          const stmt = statement as unknown as { __sql?: string; __params?: unknown[] };
+          const sql = stmt.__sql ?? "";
+          const params = stmt.__params ?? [];
+          const s = activeState();
 
-        if (sql.includes("BEGIN IMMEDIATE")) {
-          txState = cloneState(state);
-          results.push({ meta: { changes: 0 } } as D1Result);
-          continue;
-        }
-
-        if (sql.includes("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?")) {
-          const qty = Number(params[0] ?? 0);
-          const productId = String(params[1] ?? "");
-          const minStock = Number(params[2] ?? 0);
-          const product = s.products.find((item) => item.id === productId);
-
-          if (!product || product.stock < minStock) {
+          if (sql.includes("BEGIN IMMEDIATE")) {
             results.push({ meta: { changes: 0 } } as D1Result);
             continue;
           }
 
-          product.stock -= qty;
-          results.push({ meta: { changes: 1 } } as D1Result);
-          continue;
+          if (sql.includes("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?")) {
+            const qty = Number(params[0] ?? 0);
+            const productId = String(params[1] ?? "");
+            const minStock = Number(params[2] ?? 0);
+            const product = s.products.find((item) => item.id === productId);
+
+            if (!product || product.stock < minStock) {
+              results.push({ meta: { changes: 0 } } as D1Result);
+              continue;
+            }
+
+            product.stock -= qty;
+            results.push({ meta: { changes: 1 } } as D1Result);
+            continue;
+          }
+
+          if (sql.includes("INSERT INTO orders")) {
+            const [id, userId, key, total, status, shippingName, shippingAddress] = params as [
+              string,
+              string,
+              string,
+              number,
+              string,
+              string,
+              string
+            ];
+
+            const duplicate = s.orders.some(
+              (item) => item.user_id === userId && item.idempotency_key === key
+            );
+            if (duplicate) {
+              throw new Error("UNIQUE constraint failed: orders.user_id, orders.idempotency_key");
+            }
+
+            s.orders.push({
+              id,
+              user_id: userId,
+              idempotency_key: key,
+              total_cents: total,
+              status,
+              shipping_name: shippingName,
+              shipping_address: shippingAddress,
+              created_at: "2026-11-20T00:00:00.000Z"
+            });
+
+            results.push({ meta: { changes: 1 } } as D1Result);
+            continue;
+          }
+
+          if (sql.includes("INSERT INTO order_items")) {
+            const [id, orderId, productId, nameSnapshot, priceSnapshot, quantity] = params as [
+              string,
+              string,
+              string,
+              string,
+              number,
+              number
+            ];
+
+            s.order_items.push({
+              id,
+              order_id: orderId,
+              product_id: productId,
+              name_snapshot: nameSnapshot,
+              price_cents_snapshot: priceSnapshot,
+              quantity
+            });
+
+            results.push({ meta: { changes: 1 } } as D1Result);
+            continue;
+          }
+
+          if (sql.includes("DELETE FROM cart_items WHERE user_id = ?")) {
+            const userId = String(params[0] ?? "");
+            const before = s.cart_items.length;
+            s.cart_items = s.cart_items.filter((item) => item.user_id !== userId);
+            results.push({ meta: { changes: before - s.cart_items.length } } as D1Result);
+            continue;
+          }
+
+          results.push({ meta: { changes: 0 } } as D1Result);
         }
 
-        if (sql.includes("INSERT INTO orders")) {
-          const [id, userId, key, total, status, shippingName, shippingAddress] = params as [
-            string,
-            string,
-            string,
-            number,
-            string,
-            string,
-            string
-          ];
+        const stockUpdates = results.slice(
+          0,
+          statements.findIndex((statement) => {
+            const sql = (statement as unknown as { __sql?: string }).__sql ?? "";
+            return sql.includes("INSERT INTO orders");
+          })
+        );
+        const hasStockFailure = stockUpdates.some(
+          (result) => (result.meta?.changes ?? 0) === 0
+        );
 
-          s.orders.push({
-            id,
-            user_id: userId,
-            idempotency_key: key,
-            total_cents: total,
-            status,
-            shipping_name: shippingName,
-            shipping_address: shippingAddress,
-            created_at: "2026-11-20T00:00:00.000Z"
-          });
-
-          results.push({ meta: { changes: 1 } } as D1Result);
-          continue;
+        if (hasStockFailure) {
+          txState = null;
+        } else {
+          state = txState;
+          txState = null;
         }
-
-        if (sql.includes("INSERT INTO order_items")) {
-          const [id, orderId, productId, nameSnapshot, priceSnapshot, quantity] = params as [
-            string,
-            string,
-            string,
-            string,
-            number,
-            number
-          ];
-
-          s.order_items.push({
-            id,
-            order_id: orderId,
-            product_id: productId,
-            name_snapshot: nameSnapshot,
-            price_cents_snapshot: priceSnapshot,
-            quantity
-          });
-
-          results.push({ meta: { changes: 1 } } as D1Result);
-          continue;
-        }
-
-        if (sql.includes("DELETE FROM cart_items WHERE user_id = ?")) {
-          const userId = String(params[0] ?? "");
-          const before = s.cart_items.length;
-          s.cart_items = s.cart_items.filter((item) => item.user_id !== userId);
-          results.push({ meta: { changes: before - s.cart_items.length } } as D1Result);
-          continue;
-        }
-
-        results.push({ meta: { changes: 0 } } as D1Result);
+        return results;
+      } catch (error) {
+        txState = null;
+        throw error;
       }
-
-      return results;
     },
     async exec(query: string) {
       if (query.includes("COMMIT")) {
@@ -463,6 +492,70 @@ describe("POST /api/orders", () => {
     expect(second.status).toBe(200);
     expect(secondBody.id).toBe(firstBody.id);
     expect(secondBody).toEqual(firstBody);
+    expect(mock.state.orders).toHaveLength(1);
+  });
+
+  it("handles two concurrent requests with the same key as one order", async () => {
+    const mock = createMockDB({
+      users: [
+        {
+          id: "u1",
+          google_sub: "sub1",
+          email: "user@example.com",
+          name: "User"
+        }
+      ],
+      sessions: [
+        {
+          id: "sess_1",
+          user_id: "u1",
+          expires_at: "2099-01-01T00:00:00.000Z"
+        }
+      ],
+      products: [
+        {
+          id: "p1",
+          name: "Kenya AA",
+          price_cents: 1800,
+          stock: 10
+        }
+      ],
+      cart_items: [
+        {
+          user_id: "u1",
+          product_id: "p1",
+          quantity: 2
+        }
+      ],
+      orders: [],
+      order_items: []
+    });
+
+    const requestInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "idem-concurrent",
+        Cookie: "session=sess_1"
+      },
+      body: JSON.stringify({
+        shippingName: "Jane Doe",
+        shippingAddress: "123 Coffee St"
+      })
+    } as const;
+
+    const [first, second] = await Promise.all([
+      app.request("/api/orders", requestInit, baseEnv(mock.db)),
+      app.request("/api/orders", requestInit, baseEnv(mock.db))
+    ]);
+    const [firstBody, secondBody] = await Promise.all([
+      first.json<{ id: string }>(),
+      second.json<{ id: string }>()
+    ]);
+
+    expect([first.status, second.status]).toContain(201);
+    expect([first.status, second.status]).toContain(200);
+    expect(firstBody.id).toBe(secondBody.id);
     expect(mock.state.orders).toHaveLength(1);
   });
 

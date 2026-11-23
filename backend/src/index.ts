@@ -97,7 +97,8 @@ const GOOGLE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth
 
 const app = new Hono<{ Bindings: AppBindings; Variables: AppVariables }>();
 
-app.onError((_error, c) => {
+app.onError((error, c) => {
+  console.error("Unhandled application error", error);
   return c.json(errorBody("INTERNAL_ERROR", "An unexpected error occurred."), 500);
 });
 
@@ -258,7 +259,7 @@ app.get("/api/auth/google", async (c) => {
   const codeVerifier = randomBase64Url(64);
   const codeChallenge = await sha256Base64Url(codeVerifier);
   const redirectUri = oauthRedirectUri(c);
-  const cookieOptions = cookieAttributes();
+  const cookieOptions = cookieAttributes(c.req.url);
 
   setCookie(c, OAUTH_STATE_COOKIE_NAME, state, {
     ...cookieOptions,
@@ -290,13 +291,13 @@ app.get("/api/auth/google/callback", async (c) => {
   const expectedState = getCookie(c, OAUTH_STATE_COOKIE_NAME);
   const codeVerifier = getCookie(c, OAUTH_PKCE_COOKIE_NAME);
 
-  const oauthCookieOptions = cookieAttributes();
-  deleteCookie(c, OAUTH_STATE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
-  deleteCookie(c, OAUTH_PKCE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
-
   if (!code || !state || !expectedState || state !== expectedState || !codeVerifier) {
     return c.json(errorBody("INVALID_OAUTH_STATE", "Invalid OAuth state."), 400);
   }
+
+  const oauthCookieOptions = cookieAttributes(c.req.url);
+  deleteCookie(c, OAUTH_STATE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
+  deleteCookie(c, OAUTH_PKCE_COOKIE_NAME, { path: "/", ...oauthCookieOptions });
 
   const redirectUri = oauthRedirectUri(c);
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -377,7 +378,7 @@ app.get("/api/auth/google/callback", async (c) => {
     .run();
 
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
-    ...cookieAttributes(),
+    ...cookieAttributes(c.req.url),
     maxAge: SESSION_TTL_SECONDS,
     path: "/"
   });
@@ -404,7 +405,7 @@ app.post("/api/auth/logout", async (c) => {
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: "/",
-    ...cookieAttributes()
+    ...cookieAttributes(c.req.url)
   });
 
   return c.redirect(c.env.FRONTEND_ORIGIN, 302);
@@ -419,7 +420,7 @@ app.get("/api/auth/logout", async (c) => {
 
   deleteCookie(c, SESSION_COOKIE_NAME, {
     path: "/",
-    ...cookieAttributes()
+    ...cookieAttributes(c.req.url)
   });
 
   return c.redirect(c.env.FRONTEND_ORIGIN, 302);
@@ -700,8 +701,27 @@ app.post("/api/orders", requireAuth, async (c) => {
     if (hasStockFailure) {
       return c.json(errorBody("INSUFFICIENT_STOCK", "One or more items are out of stock."), 409);
     }
-  } catch {
-    return c.json(errorBody("ORDER_CREATE_FAILED", "Failed to create order."), 500);
+  } catch (error) {
+    try {
+      const existing = await c.env.DB.prepare(
+        "SELECT id FROM orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1"
+      )
+        .bind(user.id, idempotencyKey)
+        .first<{ id: string }>();
+
+      if (existing) {
+        const existingOrder = await getOrderWithItems(c, existing.id, user.id);
+        if (existingOrder) {
+          return c.json(existingOrder, 200);
+        }
+      }
+    } catch (lookupError) {
+      console.error("Failed to recover existing order after batch failure", lookupError);
+      return c.json(errorBody("INTERNAL_ERROR", "An unexpected error occurred."), 500);
+    }
+
+    console.error("Failed to create order", error);
+    return c.json(errorBody("INTERNAL_ERROR", "An unexpected error occurred."), 500);
   }
 
   const created = await getOrderWithItems(c, orderId, user.id);

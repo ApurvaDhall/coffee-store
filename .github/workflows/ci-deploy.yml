@@ -1,6 +1,3 @@
-# Save as .github/workflows/ci-deploy.yml
-# Runs lint + tests on every PR and push. Deploys only on push to main, and only if checks pass.
-
 name: CI and Deploy
 
 on:

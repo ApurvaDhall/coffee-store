@@ -1,208 +1,282 @@
-# Coffee Website
+# Roast Republic Coffee Store
 
-A full-stack coffee storefront with a React/Vite frontend and a Hono backend for Cloudflare Workers.
+Roast Republic is a full-stack coffee storefront built with React and Hono. It supports Google sign-in, a server-side cart and checkout, idempotent orders, admin product and order management, and an AI-assisted Coffee Finder.
 
-## Live URLs
+## Live application
 
-- Frontend: [PLACEHOLDER]
-- Backend: [PLACEHOLDER]
+- Site: https://coffee-frontend-2if.pages.dev
+- API: https://coffee-backend.apurvadhall.workers.dev
+- Health: https://coffee-backend.apurvadhall.workers.dev/health
+- Repository: https://github.com/ApurvaDhall/coffee-store
 
-## Project Structure
+## Overview
 
-- `frontend/` — React, Vite, and TypeScript
-- `backend/` — Hono, Cloudflare Workers, D1, TypeScript, and Vitest
-- `backend/migrations/0001_initial_schema.sql` — initial D1 schema
-- `backend/seed.sql` — seed data for 15 coffees
+Customers can browse and filter the catalogue, open product details, manage a cart, sign in with Google, checkout, and review their orders. Signed-in users can use the Coffee Finder, which asks Workers AI for catalog-backed matches and falls back to local keyword matches if AI is unavailable.
 
-## Features
+Administrators can manage products and order statuses after their Google email is included in `ADMIN_EMAILS`.
 
-### Frontend
+## Architecture
 
-- Catalogue with search, roast, origin, and price filters plus pagination
-- Product detail pages with stock-aware Add to cart behavior
-- Google sign-in and sign-out through the backend
-- Cart quantity changes and removals
-- Server-calculated cart totals
-- Authenticated checkout with shipping details and Idempotency-Key generation
-- Order confirmation and My Orders pages
-- Responsive layouts and loading, empty, and error states
+```text
+Browser
+  -> Cloudflare Pages React/Vite frontend
+  -> Pages Function proxy: /api/* -> Hono Worker
+  -> Hono Worker: Google OAuth, catalogue, cart, orders, admin, AI
+  -> Cloudflare D1
+  -> Workers AI
+```
 
-### Backend
+The frontend Pages Function proxies `/api/*` to `https://coffee-backend.apurvadhall.workers.dev`. Keeping API calls same-origin allows the browser to send the HttpOnly session cookie through the frontend, avoiding a cross-site cookie setup.
 
-- Hono API on Cloudflare Workers
-- Google OAuth 2.0 / OpenID Connect authorization-code flow with PKCE
-- HttpOnly, Secure, SameSite=Lax session cookies
-- D1-backed users, products, cart, orders, order items, and sessions
-- Server-side order totals and stock checks
-- Idempotency protection for order submission
-- Standard JSON error shape
-- CORS restricted by `FRONTEND_ORIGIN`
+The Hono Worker is the authority for authentication, cart totals, order totals, stock checks, idempotency, and database access.
 
-## API Endpoints
+## Tech stack and reasons
 
-### Health
+- React 18 and React Router 6: interactive storefront pages and client-side routing.
+- Vite and TypeScript: fast frontend builds and static type checking.
+- Cloudflare Pages and a Pages Function: static hosting plus same-origin API proxying.
+- Hono: small, typed HTTP routing for Cloudflare Workers.
+- Cloudflare D1: serverless SQLite storage for users, products, carts, orders, sessions, and rate limits.
+- Workers AI: text-generation-backed Coffee Finder recommendations.
+- Zod: request and AI-response validation.
+- jose: Google OpenID Connect ID-token verification.
+- Vitest: backend unit and route tests.
+- GitHub Actions: pull-request checks and deployment automation.
 
-- `GET /health`
+## Local setup
 
-### Authentication
+Requirements:
 
-- `GET /api/auth/google`
-- `GET /api/auth/google/callback`
-- `GET /api/auth/me`
-- `POST /api/auth/logout`
+- Node.js 20
+- npm
+- A Google OAuth app
+- A Cloudflare account with D1 access for remote deployment
 
-### Products
-
-- `GET /api/products`
-- `GET /api/products/:id`
-
-Query parameters for `GET /api/products`:
-
-- `q`
-- `roast`
-- `origin`
-- `minPrice`
-- `maxPrice`
-- `page`
-- `pageSize` (maximum 50)
-
-### Cart
-
-- `GET /api/cart` — requires authentication
-- `PUT /api/cart/items/:productId` — requires authentication
-- `DELETE /api/cart/items/:productId` — requires authentication
-
-### Orders
-
-- `POST /api/orders` — requires authentication and `Idempotency-Key`
-- `GET /api/orders` — requires authentication
-- `GET /api/orders/:id` — requires authentication and order ownership
-
-## Frontend Routes
-
-- `/` — catalogue
-- `/products/:id` — product detail
-- `/cart` — cart
-- `/checkout` — checkout
-- `/orders` — My Orders
-- `/orders/:id` — order detail
-- `/orders/:id/confirmation` — order confirmation
-
-## Environment Variables
-
-Copy [`.env.example`](.env.example) as a starting point.
-
-Backend variables:
-
-- `FRONTEND_ORIGIN`
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `SESSION_SECRET`
-- `ADMIN_EMAILS`
-
-Frontend variable:
-
-- `VITE_API_URL`
-
-The frontend API client uses `VITE_API_URL` as its base URL and sets `credentials: "include"` on API requests.
-
-## Backend Setup
+Install and run the backend:
 
 ```powershell
 cd backend
-npm install
+npm ci
 npm run db:setup:local
 npm run dev
 ```
 
-Configure the real D1 database name and ID in `backend/wrangler.toml` before remote deployment.
+The local Worker defaults to `http://localhost:8787`.
 
-## Frontend Setup
+Install and run the frontend in another terminal:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Set `VITE_API_URL` in `frontend/.env` or the frontend deployment environment before starting or building.
+Copy `.env.example` files only as templates. Never add real credentials to `.env`, `.dev.vars`, or the README.
 
-## Backend Scripts
+## Environment variables
 
-- `npm run dev` — start Wrangler locally
-- `npm run deploy` — deploy the Worker
-- `npm run lint` — run ESLint
-- `npm run format` — format files with Prettier
-- `npm run typecheck` — run TypeScript checking
-- `npm test` — run Vitest once
-- `npm run test:watch` — run Vitest in watch mode
-- `npm run db:migrate:local` — apply migrations to local D1
-- `npm run db:migrate:remote` — apply migrations to remote D1
-- `npm run db:seed:local` — seed local D1
-- `npm run db:seed:remote` — seed remote D1
-- `npm run db:setup:local` — migrate then seed local D1
-- `npm run db:setup:remote` — migrate then seed remote D1
+Application variables:
 
-## Frontend Scripts
+| Name | Purpose |
+| --- | --- |
+| `FRONTEND_ORIGIN` | Allowed frontend origin and OAuth redirect origin in the Worker |
+| `OAUTH_REDIRECT_URI` | Optional explicit Google OAuth callback URL |
+| `GOOGLE_CLIENT_ID` | Google OAuth application client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth application client secret |
+| `SESSION_SECRET` | Session/signing configuration for the application |
+| `ADMIN_EMAILS` | Comma-separated Google emails allowed to use `/api/admin/*` |
+| `VITE_API_URL` | Optional frontend API base URL; production uses same-origin requests |
 
-- `npm run dev` — start Vite
-- `npm run build` — typecheck and produce the production build
-- `npm run preview` — preview the production build
-- `npm run lint` — run ESLint
-- `npm run format` — format files with Prettier
-- `npm run typecheck` — run TypeScript checking
+The binding names `DB` and `AI` are configured in `backend/wrangler.toml`; they are Cloudflare bindings, not environment variables.
 
-## Tests
+### Admin reviewer access
 
-Run from `backend/`:
+Admin access is determined by `ADMIN_EMAILS` in `backend/wrangler.toml`. A reviewer must:
+
+1. Have their Google email added to `ADMIN_EMAILS`.
+2. Be added to the Google OAuth app's Test users because the app is in Testing mode.
+
+Reviewer Google email: `[REVIEWER EMAIL]`
+
+Alternatively, ask the repository owner to add the reviewer email.
+
+### OAuth testing mode
+
+The Google OAuth app is in Testing mode. Only Google accounts explicitly added as Test users can sign in.
+
+## Scripts
+
+Backend scripts:
+
+- `npm run dev` - start the local Worker
+- `npm run deploy` - deploy the Worker
+- `npm run lint` - run ESLint
+- `npm run format` - format files with Prettier
+- `npm run typecheck` - run TypeScript without emitting
+- `npm test` - run the Vitest suite once
+- `npm run test:watch` - run Vitest in watch mode
+- `npm run db:migrate:local` - apply D1 migrations locally
+- `npm run db:migrate:remote` - apply D1 migrations remotely
+- `npm run db:seed:local` - seed local D1
+- `npm run db:seed:remote` - seed remote D1
+- `npm run db:setup:local` - migrate then seed local D1
+- `npm run db:setup:remote` - migrate then seed remote D1
+
+Frontend scripts:
+
+- `npm run dev` - start Vite
+- `npm run build` - type-check and create the production build
+- `npm run preview` - preview the production build
+- `npm run lint` - run ESLint
+- `npm run format` - format files with Prettier
+- `npm run typecheck` - run TypeScript without emitting
+
+## How to run tests
+
+Backend:
 
 ```powershell
+cd backend
+npm run lint
+npx tsc --noEmit
 npm test
 ```
 
-The Vitest suite covers:
-
-- Health endpoint
-- Product filtering and pagination
-- Product detail 404 behavior
-- Cart line and cart total calculations
-- Quantity change and empty cart totals
-- Order total calculation
-- Insufficient stock rollback and 409 behavior
-- Idempotency with a repeated key
-- Tampered request prices ignored in favor of database prices
-- Anonymous and normal-user admin authorization middleware behavior
-
-## Database Migration
-
-Apply and seed local D1:
+Frontend:
 
 ```powershell
-cd backend
-npm run db:setup:local
+cd frontend
+npm run lint
+npm run build
 ```
 
-Apply and seed remote D1:
+The frontend has no automated test suite. Backend Vitest coverage includes health, products, cart calculations, order totals and rollback behavior, tampered prices, idempotency, admin authorization, and AI Coffee Finder response handling.
+
+## CI/CD
+
+GitHub Actions runs for pull requests and pushes to `main`:
+
+1. Install backend and frontend dependencies with `npm ci`.
+2. Run lint in both folders.
+3. Run backend TypeScript checking.
+4. Run backend Vitest tests.
+5. Build the frontend.
+6. On a push to `main`, and only after all checks pass, apply remote D1 migrations and deploy the Worker.
+7. Build and deploy the frontend to the Cloudflare Pages project `coffee-frontend`.
+
+Pull requests do not deploy either application.
+
+## API endpoint list
+
+### Health
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `GET` | `/health` | Public |
+
+### Authentication
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `GET` | `/api/auth/google` | Starts Google OAuth |
+| `GET` | `/api/auth/google/callback` | OAuth callback |
+| `GET` | `/api/auth/me` | Signed-in user |
+| `POST` | `/api/auth/logout` | Signed-in user |
+
+### Products
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `GET` | `/api/products` | Public |
+| `GET` | `/api/products/:id` | Public |
+
+`GET /api/products` accepts `q`, `roast`, `origin`, `minPrice`, `maxPrice`, `page`, and `pageSize` (maximum 50).
+
+### Cart
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `GET` | `/api/cart` | Signed-in user |
+| `PUT` | `/api/cart/items/:productId` | Signed-in user |
+| `DELETE` | `/api/cart/items/:productId` | Signed-in user |
+
+### Orders
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `POST` | `/api/orders` | Signed-in user; requires `Idempotency-Key` |
+| `GET` | `/api/orders` | Signed-in user |
+| `GET` | `/api/orders/:id` | Signed-in user and order owner |
+
+### Admin
+
+Every `/api/admin/*` route is behind `requireAuth` and `requireAdmin`.
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `GET` | `/api/admin/products` | Admin |
+| `POST` | `/api/admin/products` | Admin |
+| `PATCH` | `/api/admin/products/:id` | Admin |
+| `GET` | `/api/admin/orders` | Admin |
+| `PATCH` | `/api/admin/orders/:id/status` | Admin |
+
+### AI Coffee Finder
+
+| Method | Endpoint | Access |
+| --- | --- | --- |
+| `POST` | `/api/ai/coffee-finder` | Public, limited to 10 requests per minute per process window |
+
+The request body is `{ "query": "..." }`; the server accepts 1-300 characters.
+
+## AI feature and limits
+
+Coffee Finder sends a catalog snapshot and the user query to Workers AI using `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Returned product IDs are validated and cross-checked against D1 before any product is returned. The AI response supports both `response` and OpenAI-style `choices[0].message.content` shapes and tolerates fenced or surrounding text around JSON.
+
+The endpoint has a fixed 8-second timeout and a D1-backed 10-request-per-minute rate-limit row per window. Recommendations are limited to three catalog items. If AI fails, times out, or returns invalid or unknown IDs, the endpoint returns the first three available catalog products as keyword/fallback inventory matches.
+
+## Assumptions and trade-offs
+
+- Google is the only supported sign-in provider.
+- The payment flow is mocked: no real payment provider charges or settlement is performed.
+- Stock is checked and decremented as part of order creation; database constraints keep stock from becoming negative.
+- Order total and product snapshots are based on database prices, not client-provided prices.
+- The Idempotency-Key prevents duplicate orders for the same user and key.
+- The D1 rate limit is simple and may not be a distributed global limiter in every deployment scenario.
+- The catalog fallback is intentionally conservative: only database products are exposed.
+- Test orders exist in the live database.
+
+## Known issues
+
+- Payment is mocked.
+- Git history was set up late, so commits are grouped by feature.
+- `npm audit` reports dependency vulnerabilities that were not fixed.
+- Wrangler is on v3 and is not upgraded.
+- No end-to-end tests exist.
+- The frontend has no automated test suite.
+- Test orders exist in the live database.
+- The Google OAuth app is in Testing mode and only Test users can sign in.
+
+## Secret-scanning checklist
+
+Before a public release or code review, scan the working tree and history for credentials:
 
 ```powershell
-cd backend
-npm run db:setup:remote
+# From the repository root
+npx gitleaks detect --source . --no-git
+npx gitleaks detect --source . --log-opts="--all"
 ```
 
-## Known Issues
+The second command scans Git history. Gitleaks is not currently a repository dependency; install or run it through the project/environment's approved tooling.
 
-- The repository is not currently initialized as a Git repository, so no history-based secret scan has been run.
-- Admin route modules and their `/api/admin/*` mounts are not present in the backend.
-- AI route modules and `/api/ai/coffee-finder` are not implemented in the backend.
-- Live frontend and backend deployment URLs are not provided.
-- `backend/wrangler.toml` contains D1 name and ID placeholders that must be replaced for deployment.
-- No CI/CD deployment workflow file is currently present.
+Do not commit `.dev.vars`, real `.env` files, private keys, OAuth secrets, session secrets, or Cloudflare API tokens.
 
-## What I Would Do With More Time
+## What I would do with more time
 
-- Add real admin product and order route modules with server-side validation.
-- Implement and test the AI Coffee Finder endpoint, including input limits, database-verified products, fallback behavior, and rate limiting.
-- Initialize Git and run secret scans on both the working tree and full history.
-- Add a real README environment/Cloudflare setup guide and deployment runbook.
-- Expand API tests to cover every endpoint and middleware branch.
-- Add frontend component tests and end-to-end checkout/auth tests.
+- Add Playwright end-to-end tests.
+- Create a staging environment.
+- Add pull-request preview deployments.
+- Integrate Stripe Test mode.
+- Add order confirmation emails.
+- Add image upload and hosted-image management.
+- Improve distributed rate limiting.
+- Upgrade Wrangler to v4.

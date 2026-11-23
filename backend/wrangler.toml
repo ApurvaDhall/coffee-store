@@ -12,5 +12,5 @@ binding = "AI"
 
 [vars]
 FRONTEND_ORIGIN = "https://coffee-frontend-2if.pages.dev"
-GOOGLE_CLIENT_ID = "replace-with-google-client-id"
-ADMIN_EMAILS = "replace-with-admin-emails"
+GOOGLE_CLIENT_ID = "246622750114-j73u72iojlkf2belcj64v1l4ftvfgki7.apps.googleusercontent.com"
+ADMIN_EMAILS = "apurva2464@gmail.com"

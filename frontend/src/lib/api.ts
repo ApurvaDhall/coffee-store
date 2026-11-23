@@ -141,12 +141,10 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
+const configuredApiUrl = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
+const API_BASE_URL = configuredApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
 
 function toUrl(path: string): string {
-  if (!API_BASE_URL) {
-    throw new Error("VITE_API_URL is not configured.");
-  }
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 

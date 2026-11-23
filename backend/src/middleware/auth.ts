@@ -22,10 +22,20 @@ export type AuthUser = {
   name: string;
 };
 
-export function cookieAttributes() {
+export function cookieAttributes(requestUrl?: string) {
+  let local = false;
+  try {
+    if (requestUrl) {
+      const hostname = new URL(requestUrl).hostname;
+      local = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    }
+  } catch {
+    local = true;
+  }
+
   return {
     httpOnly: true,
-    secure: true,
+    secure: !local,
     sameSite: "Lax" as const
   };
 }
@@ -99,7 +109,7 @@ export async function requireAuth(
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
       path: "/",
-      ...cookieAttributes()
+      ...cookieAttributes(c.req.url)
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }
@@ -121,7 +131,7 @@ export async function requireAdmin(
   if (!user) {
     deleteCookie(c, SESSION_COOKIE_NAME, {
       path: "/",
-      ...cookieAttributes()
+      ...cookieAttributes(c.req.url)
     });
     return c.json(errorBody("UNAUTHORIZED", "Authentication required."), 401);
   }
